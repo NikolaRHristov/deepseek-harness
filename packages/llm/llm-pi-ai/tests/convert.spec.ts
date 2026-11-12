@@ -888,9 +888,27 @@ describe('mapStopReason / mapUsage', () => {
     })
   })
 
-  it('keeps a thinking-only stop successful (any block counts as content)', () => {
+  it('classifies a thinking-only stop as an EMPTY_RESPONSE error', () => {
     expect(mapStopReason(assistant({ stopReason: 'stop', content: [{ type: 'thinking', thinking: 'mull' }] })))
+      .toEqual({
+        kind: 'error',
+        failure: {
+          message: 'model "deepseek-v4-flash" returned a completed response with no content',
+          code: EMPTY_RESPONSE_CODE,
+        },
+      })
+  })
+
+  it('keeps a stop with text or a tool call successful', () => {
+    expect(mapStopReason(assistant({ stopReason: 'stop', content: [{ type: 'text', text: 'ok' }] })))
       .toEqual({ kind: 'stop' })
+    expect(mapStopReason(assistant({
+      stopReason: 'stop',
+      content: [
+        { type: 'thinking', thinking: 'mull' },
+        { type: 'toolCall', id: 'call-1', name: 'read', arguments: {} },
+      ],
+    }))).toEqual({ kind: 'stop' })
   })
 
   it('defaults the error message when pi-ai omits it', () => {

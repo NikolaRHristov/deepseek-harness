@@ -67,7 +67,7 @@ function classifyPiAiError(message: string): BuiltinLlmFailureCode {
   if (/\b(?:network|connection|socket|fetch)\b|\bECONN[A-Z]+\b/i.test(message)
     || /\b(?:other side closed|HTTP2 request did not get a response|WebSocket closed unexpectedly)\b/i.test(message)
     // undici renders a mid-stream socket drop as a bare `terminated` (its
-    // `cause` — the real SocketError — was flattened away upstream); Node's
+    // `cause` - the real SocketError - was flattened away upstream); Node's
     // stream layer says `Premature close`.
     || /\bterminated\b|premature close/i.test(message)) {
     return 'TRANSPORT'
@@ -101,10 +101,19 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
   }
 
   switch (message.stopReason) {
-    case 'stop':
+    case 'stop': {
       // A terminal stop that produced no content blocks is a degenerate
       // provider completion, not a successful (empty) assistant message.
-      if (message.content.length === 0) {
+      //
+      // The same is true when the only blocks are thinking. A provider that
+      // truncates mid-reasoning still reports `stop`, and calling that a
+      // success ends the turn with nothing the user can act on while skipping
+      // the retry that would have recovered it. Reasoning is not an answer:
+      // a turn is complete only once it produces text or a tool call.
+      const producedAnswer = message.content.some(
+        block => block.type === 'text' || block.type === 'toolCall',
+      )
+      if (!producedAnswer) {
         return {
           kind: 'error',
           failure: {
@@ -114,6 +123,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
         }
       }
       return { kind: 'stop' }
+    }
     case 'length': return { kind: 'max-tokens' }
     case 'toolUse': return { kind: 'tool-calls' }
     case 'pending': return {
@@ -137,7 +147,7 @@ export function mapStopReason(message: AssistantMessage, contextWindow?: number)
 
 /**
  * Translate the pi-ai event stream into StreamChunks. pi-ai never throws
- * mid-stream — failures arrive as `error` events, which become error/aborted
+ * mid-stream - failures arrive as `error` events, which become error/aborted
  * `finish` chunks (the harness protocol's other error-delivery style).
  * @param events - one assistant turn's pi-ai event stream.
  * @param contextWindow - resolved catalog capacity for usage-based overflow detection.
